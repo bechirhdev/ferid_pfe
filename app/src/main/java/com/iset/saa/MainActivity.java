@@ -2,6 +2,7 @@ package com.iset.saa;
 
 import android.os.Bundle;
 import android.util.Log;
+import android.view.Gravity;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.widget.ToggleButton;
@@ -45,9 +46,37 @@ public class MainActivity extends AppCompatActivity {
 
         dashDataRef = FirebaseDatabase.getInstance().getReference("data");
 
-        motopompe.setOnClickListener(v -> dashDataRef.child("motopompe").setValue(motopompe.isChecked()));
-        vanne1.setOnClickListener(v -> dashDataRef.child("vanne1").setValue(vanne1.isChecked()));
-        vanne2.setOnClickListener(v -> dashDataRef.child("vanne2").setValue(vanne2.isChecked()));
+        motopompe.setOnClickListener(v -> {
+            if(!motopompe.isChecked() && vanne1.isChecked() && vanne2.isChecked()) {
+                Toast toast = Toast.makeText(getApplicationContext(), "Veuillez ouvrir au moin une vanne pour pouvoir demarrer le motopompe!", Toast.LENGTH_LONG);
+                toast.setGravity(Gravity.CENTER, 0, 0);
+                toast.show();
+                motopompe.setChecked(true);
+                return;
+            }
+            dashDataRef.child("motopompe").setValue(!motopompe.isChecked());
+        });
+        vanne1.setOnClickListener(v -> {
+            if(!motopompe.isChecked() && vanne1.isChecked() && vanne2.isChecked()) {
+                Toast toast = Toast.makeText(getApplicationContext(), "Vous ne pouvez pas fermer les deux vannes lorsque le motopompe est en marche!", Toast.LENGTH_LONG);
+                toast.setGravity(Gravity.CENTER, 0, 0);
+                toast.show();
+                vanne1.setChecked(false);
+                return;
+            }
+            dashDataRef.child("vanne1").setValue(!vanne1.isChecked());
+        });
+
+        vanne2.setOnClickListener(v -> {
+            if(!motopompe.isChecked() && vanne1.isChecked() && vanne2.isChecked()) {
+                Toast toast = Toast.makeText(getApplicationContext(), "Vous ne pouvez pas fermer les deux vannes lorsque le motopompe est en marche!", Toast.LENGTH_LONG);
+                toast.setGravity(Gravity.CENTER, 0, 0);
+                toast.show();
+                vanne2.setChecked(false);
+                return;
+            }
+            dashDataRef.child("vanne2").setValue(!vanne2.isChecked());
+        });
 
         dashDataRef.addValueEventListener(new ValueEventListener() {
             @Override
@@ -58,9 +87,9 @@ public class MainActivity extends AppCompatActivity {
                 humidite.setText(String.valueOf(data.humidite) + "%");
                 humiditeSol.setText(String.valueOf(data.humiditeSol) + "%");
 
-                motopompe.setChecked(Boolean.TRUE.equals(data.motopompe));
-                vanne1.setChecked(Boolean.TRUE.equals(data.vanne1));
-                vanne2.setChecked(Boolean.TRUE.equals(data.vanne2));
+                motopompe.setChecked(Boolean.TRUE.equals(!data.motopompe));
+                vanne1.setChecked(Boolean.TRUE.equals(!data.vanne1));
+                vanne2.setChecked(Boolean.TRUE.equals(!data.vanne2));
             }
 
             @Override
