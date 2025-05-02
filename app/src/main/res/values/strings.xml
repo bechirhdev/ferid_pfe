@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Saa</string>
+    <string name="temperature">Temperature</string>
+    <string name="humidite">Humidité</string>
+    <string name="humidite_de_sol">humidite de sol</string>
+    <string name="motopompe">Motopompe</string>
+</resources>

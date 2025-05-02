@@ -1,0 +1,49 @@
+{
+  "project_info": {
+    "project_number": "493916297196",
+    "firebase_url": "https://ferid-pfe-default-rtdb.firebaseio.com",
+    "project_id": "ferid-pfe",
+    "storage_bucket": "ferid-pfe.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:493916297196:android:951ff6b2bc1622681a52c9",
+        "android_client_info": {
+          "package_name": "com.iset.pfe"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBi07ursRK2k226UkMUYuk4BKPQPY1qv94"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:493916297196:android:aefc8af65357d27f1a52c9",
+        "android_client_info": {
+          "package_name": "com.iset.saa"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBi07ursRK2k226UkMUYuk4BKPQPY1qv94"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
