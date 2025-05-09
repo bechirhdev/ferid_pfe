@@ -17,8 +17,8 @@
 #define BLUE_LED             13
 
 #define MOTOPOMPE_PIN        32
-#define VANE1_PIN            33
-#define VANE2_PIN            34
+#define VANNE1_PIN           33
+#define VANNE2_PIN           34
 
 
 #define BAUD_RATE            115200
@@ -97,10 +97,6 @@ int readHumiditeSol() {
 
 bool readSystemData() {
   systemData.clear();
-  systemData["motopompe"] = digitalRead(MOTOPOMPE_PIN);
-  systemData["vanne1"] = digitalRead(VANE1_PIN);
-  systemData["vanne2"] = digitalRead(VANE2_PIN);
-
   systemData["temperature"] = readTemp();
   systemData["humidite"] = readHumidite();
   systemData["humiditeSol"] = readHumiditeSol();
@@ -147,22 +143,64 @@ bool updateFirebaseData() {
     return false;
 }
 
-bool dataChanged() {
-  bool changed = false; 
+bool checkChangedData() {
+  int motopompeStatus = digitalRead(MOTOPOMPE_PIN);
+  if(firebaseData["motopompe"] == true) {
+    if(motopompeStatus == LOW) {
+      SerialMon.print("Start motopompe");
+      digitalWrite(MOTOPOMPE_PIN, HIGH);
+    }
+  }
+  else {
+    if(motopompeStatus == HIGH) {
+      SerialMon.print("Stop motopompe");
+      digitalWrite(MOTOPOMPE_PIN, LOW);
+    }
+  }
+
+  int vanne1Status = digitalRead(VANNE1_PIN);
+  if(firebaseData["vanne1"] == true) {
+    if(vanne1Status == LOW) {
+      SerialMon.print("Start vanne1");
+      digitalWrite(VANNE1_PIN, HIGH);
+    }
+  }
+  else {
+    if(vanne1Status == HIGH) {
+      SerialMon.print("Stop vanne1");
+      digitalWrite(VANNE1_PIN, LOW);
+    }
+  }
+
+  int vanne2Status = digitalRead(VANNE1_PIN);
+  if(firebaseData["vanne2"] == true) {
+    if(vanne2Status == LOW) {
+      SerialMon.print("Start vanne2");
+      digitalWrite(VANNE2_PIN, HIGH);
+    }
+  }
+  else {
+    if(vanne2Status == HIGH) {
+      SerialMon.print("Stop vanne2");
+      digitalWrite(VANNE2_PIN, LOW);
+    }
+  }
+
+  bool sensorsChanged = false; 
   changedData.clear();
   if(systemData["temperature"] != firebaseData["temperature"]) {
     changedData["temperature"] = systemData["temperature"];
-    changed = true;
+    sensorsChanged = true;
   }
   if(systemData["humidite"] != firebaseData["humidite"]) {
     changedData["humidite"] = systemData["humidite"];
-    changed = true;
+    sensorsChanged = true;
   }
   if(systemData["humiditeSol"] != firebaseData["humiditeSol"]) {
     changedData["humiditeSol"] = systemData["humiditeSol"];
-    changed = true;
+    sensorsChanged = true;
   }
-  return changed;
+  return sensorsChanged;
 }
 
 void setup() {
@@ -183,6 +221,11 @@ void setup() {
 
   pinMode(BLUE_LED, OUTPUT);
   digitalWrite(BLUE_LED, LOW);
+
+  pinMode(MOTOPOMPE_PIN, OUTPUT);
+  pinMode(VANNE1_PIN, OUTPUT);
+  pinMode(VANNE2_PIN, OUTPUT);
+  
 
   SerialMon.begin(BAUD_RATE);
   delay(10);
@@ -207,7 +250,7 @@ void loop() {
     while(!readFirebaseData()) {
       delay(1000);
     }
-    if(dataChanged()) {
+    if(checkChangedData()) {
       updateFirebaseData();
     }
   }
