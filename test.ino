@@ -172,7 +172,7 @@ bool checkChangedData() {
     }
   }
 
-  int vanne2Status = digitalRead(VANNE1_PIN);
+  int vanne2Status = digitalRead(VANNE2_PIN);
   if(firebaseData["vanne2"] == true) {
     if(vanne2Status == LOW) {
       SerialMon.print("Start vanne2");
