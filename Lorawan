@@ -1,0 +1,229 @@
+#include <SPI.h>
+#include <LoRa.h>
+#include <TinyGsmClient.h>
+// #include <PubSubClient.h> // Non utilisé pour l'instant, Firebase via HTTP REST
+#include <ArduinoHttpClient.h> // Pour les requêtes HTTP
+
+// Configuration LoRa
+#define LORA_SCK 5
+#define LORA_MISO 19
+#define LORA_MOSI 27
+#define LORA_SS 18
+#define LORA_RST 14
+#define LORA_DIO0 26
+#define LORA_BAND 868E6 // Ou 433E6, 915E6 selon votre région et module
+
+// Configuration SIM800L (TTGO T-Call)
+#define MODEM_RST            5
+#define MODEM_PWRKEY         4
+#define MODEM_POWER_ON       23
+#define MODEM_TX             27 // TX du SIM800L vers RX de l'ESP32
+#define MODEM_RX             26 // RX du SIM800L vers TX de l'ESP32
+
+#define SerialMon Serial
+#define SerialAT Serial1
+
+// Paramètres GPRS (À REMPLACER PAR VOS INFORMATIONS)
+const char apn[]  = "your_apn"; // REMPLACEZ PAR VOTRE APN
+const char gprsUser[] = ""; // Laissez vide si non requis
+const char gprsPass[] = ""; // Laissez vide si non requis
+
+// Paramètres Firebase
+const char* firebase_host = "testlilygo-default-rtdb.firebaseio.com";
+const String firebase_auth = "BDWr2Ie3r6dBvKFIG1tT8vzlaQgE20fHHw9B33MQ"; 
+const String firebase_base_path = "/capteurs/temperature_ext"; // Chemin de base, nous ajouterons .json pour PUT
+
+TinyGsm modem(SerialAT);
+TinyGsmClient client(modem); // Client pour les requêtes HTTP
+// PubSubClient mqtt(client); // Non utilisé
+HttpClient http_client = HttpClient(client, firebase_host, 80); // Port 80 pour HTTP, Firebase redirigera vers HTTPS si nécessaire ou AT command gère SSL
+
+float temperature_from_lora = 0.0;
+bool new_lora_data_received = false;
+
+void onLoraReceive(int packetSize) {
+  if (packetSize == 0) return;
+
+  String received_text = "";
+  while (LoRa.available()) {
+    received_text += (char)LoRa.read();
+  }
+
+  SerialMon.print("Paquet LoRa reçu : ");
+  SerialMon.println(received_text);
+  SerialMon.print("RSSI : ");
+  SerialMon.println(LoRa.packetRssi());
+
+  // Supposons que la température est envoyée comme un simple float en chaîne de caractères
+  // Il serait plus robuste de parser un format JSON ou une structure de données définie
+  temperature_from_lora = received_text.toFloat();
+  if (temperature_from_lora != 0.0 || received_text.equals("0.0")) { // Simple vérification
+    new_lora_data_received = true;
+    SerialMon.print("Température extraite : ");
+    SerialMon.println(temperature_from_lora);
+  } else {
+    SerialMon.println("Erreur: Donnée LoRa non reconnue comme float.");
+  }
+}
+
+void setup_lora() {
+  SerialMon.println("Initialisation LoRa...");
+  SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_SS);
+  LoRa.setPins(LORA_SS, LORA_RST, LORA_DIO0);
+  if (!LoRa.begin(LORA_BAND)) {
+    SerialMon.println("Échec de l'initialisation LoRa !");
+    while (1);
+  }
+  SerialMon.println("LoRa initialisé avec succès.");
+  LoRa.onReceive(onLoraReceive);
+  LoRa.receive();
+}
+
+void setup_sim800l() {
+  SerialMon.println("Initialisation SIM800L...");
+
+  pinMode(MODEM_PWRKEY, OUTPUT);
+  digitalWrite(MODEM_PWRKEY, LOW);
+  pinMode(MODEM_POWER_ON, OUTPUT);
+  digitalWrite(MODEM_POWER_ON, LOW);
+  delay(100);
+  digitalWrite(MODEM_POWER_ON, HIGH);
+  delay(1000);
+  digitalWrite(MODEM_POWER_ON, LOW);
+
+  SerialAT.begin(115200, SERIAL_8N1, MODEM_RX, MODEM_TX);
+  delay(6000); // Attente plus longue pour l'initialisation du modem
+
+  SerialMon.println("Redémarrage du modem si nécessaire...");
+  modem.restart();
+  SerialMon.println("Modem initialisé. Attente du réseau...");
+
+  int max_retries = 5;
+  int retries = 0;
+  while (!modem.waitForNetwork(180000L, true) && retries < max_retries) { // true pour afficher la progression
+    SerialMon.print("Échec de la connexion au réseau, nouvelle tentative (");
+    SerialMon.print(++retries);
+    SerialMon.println(")");
+    delay(5000);
+    if (retries >= max_retries) {
+        SerialMon.println("Nombre maximum de tentatives de connexion au réseau atteint.");
+        return; // Ou gérer l'erreur autrement
+    }
+  }
+  if (!modem.isNetworkConnected()) {
+    SerialMon.println("Non connecté au réseau après tentatives.");
+    return;
+  }
+  SerialMon.println("Connecté au réseau");
+
+  SerialMon.print("Connexion GPRS à ");
+  SerialMon.println(apn);
+  retries = 0;
+  while (!modem.gprsConnect(apn, gprsUser, gprsPass) && retries < max_retries) {
+    SerialMon.print("Échec de la connexion GPRS, nouvelle tentative (");
+    SerialMon.print(++retries);
+    SerialMon.println(")");
+    delay(5000);
+     if (retries >= max_retries) {
+        SerialMon.println("Nombre maximum de tentatives de connexion GPRS atteint.");
+        return; // Ou gérer l'erreur autrement
+    }
+  }
+   if (!modem.isGprsConnected()) {
+    SerialMon.println("Non connecté au GPRS après tentatives.");
+    return;
+  }
+  SerialMon.println("GPRS connecté");
+  SerialMon.println("SIM800L initialisé et GPRS connecté.");
+}
+
+void send_to_firebase(float temp_value) {
+  if (!modem.isGprsConnected()) {
+    SerialMon.println("GPRS non connecté. Tentative de reconnexion...");
+    // Tenter de se reconnecter ou de réinitialiser la configuration GPRS
+    setup_sim800l(); // Attention, cela peut être long
+    if (!modem.isGprsConnected()) {
+        SerialMon.println("Impossible de se reconnecter au GPRS.");
+        return;
+    }
+  }
+
+  SerialMon.print("Envoi de la température à Firebase: ");
+  SerialMon.println(temp_value);
+
+  String data = "{\"temperature\": " + String(temp_value, 2) + "}"; // JSON simple avec la température
+  String path_with_auth = firebase_base_path + ".json?auth=" + firebase_auth;
+
+  SerialMon.print("URL: "); SerialMon.println(firebase_host + path_with_auth);
+  SerialMon.print("Payload: "); SerialMon.println(data);
+
+  // Utilisation de commandes AT pour HTTPS car HttpClient de ArduinoHttpClient ne gère pas SSL directement avec TinyGSM
+  // Alternative: utiliser une bibliothèque comme Firebase-ESP-Client qui gère cela, ou implémenter les commandes AT pour HTTP(S) POST/PUT.
+  // Pour la simplicité avec TinyGSM et Firebase REST API, on utilise souvent HTTP PUT.
+  // Firebase redirige HTTP vers HTTPS, mais le SIM800L doit supporter SSL pour cela.
+  // Vérifions si TinyGSM peut faire une requête PUT simple.
+  // Si SSL est requis et non géré par TinyGsmClient directement, il faut utiliser des commandes AT spécifiques pour SSL.
+
+  // Solution plus directe avec commandes AT pour HTTP(S) POST/PUT
+  // Pour cet exemple, nous allons essayer avec HttpClient, mais il est possible que cela ne fonctionne pas pour HTTPS sans configuration SSL du modem.
+  // Une meilleure approche pour Firebase avec SIM800L est souvent d'utiliser MQTT ou des commandes AT directes pour HTTPS.
+
+  // Tentative avec HttpClient (peut nécessiter des ajustements pour HTTPS avec SIM800L)
+  // Pour Firebase, il est préférable d'utiliser PUT pour écraser la valeur à un chemin spécifique ou POST pour ajouter à une liste.
+  // Ici, nous allons utiliser PUT pour mettre à jour la valeur de température.
+  
+  SerialMon.println("Début de la requête HTTP...");
+  http_client.beginRequest(); // Réinitialise la requête
+  int err = http_client.put(path_with_auth); // Utiliser PUT pour écraser la valeur
+  if (err == 0) {
+    http_client.sendHeader("Content-Type", "application/json");
+    http_client.sendHeader("Content-Length", data.length());
+    http_client.beginBody();
+    http_client.print(data);
+    http_client.endRequest();
+
+    int httpCode = http_client.responseStatusCode();
+    String response = http_client.responseBody();
+
+    SerialMon.print("Code de statut HTTP: ");
+    SerialMon.println(httpCode);
+    SerialMon.print("Réponse HTTP: ");
+    SerialMon.println(response);
+  } else {
+    SerialMon.print("Erreur lors de la requête HTTP PUT: ");
+    SerialMon.println(err);
+  }
+  // http_client.stop(); // Ferme la connexion si elle n'est pas persistante
+}
+
+void setup() {
+  SerialMon.begin(115200);
+  delay(1000);
+  SerialMon.println("Démarrage du programme...");
+
+  setup_lora();
+  setup_sim800l(); // Initialisation du SIM800L et connexion GPRS
+
+  SerialMon.println("Setup terminé. En attente de données LoRa...");
+}
+
+void loop() {
+  if (new_lora_data_received) {
+    SerialMon.print("Nouvelle donnée de température reçue via LoRa : ");
+    SerialMon.println(temperature_from_lora);
+
+    send_to_firebase(temperature_from_lora);
+    
+    new_lora_data_received = false;
+    LoRa.receive(); // Remettre LoRa en mode réception
+  }
+  
+  // Maintenance de la connexion GPRS si nécessaire
+  if (!modem.isGprsConnected()) {
+    SerialMon.println("GPRS déconnecté dans la boucle. Tentative de reconnexion...");
+    // Optionnel: Tenter une reconnexion GPRS ici si ce n'est pas géré dans send_to_firebase
+    // modem.gprsConnect(apn, gprsUser, gprsPass);
+  }
+  delay(100); // Petite pause pour la stabilité
+}
+
